@@ -253,6 +253,8 @@ type SignBuilder struct {
 	preferCRL       bool
 	revocationCache sign.RevocationCache
 	unit            float64
+	targetField     string
+	fieldLock       *sign.FieldMDP
 	ctx             context.Context
 }
 
@@ -350,6 +352,27 @@ func (b *SignBuilder) Appearance(a *Appearance, x, y float64) *SignBuilder {
 // called. Can be chained before or after Appearance.
 func (b *SignBuilder) Page(page int) *SignBuilder {
 	b.appPage = page
+	return b
+}
+
+// Field signs into the pre-existing empty signature field with the given
+// fully qualified name (12.7.3.2) instead of creating a new field: the field
+// keeps its name, flags and seed values, and its /V starts pointing at the
+// new signature. The field must exist and carry no /V, and a visible
+// appearance is not supported with it. Preparing such fields is the
+// document owner's job; a document without them fails to sign.
+func (b *SignBuilder) Field(name string) *SignBuilder {
+	b.targetField = name
+	return b
+}
+
+// LockFields adds a FieldMDP transform to an approval signature that locks
+// the named form fields against later changes (12.8.2.4). Action is one of
+// All, Include or Exclude; the fields are the fully qualified names an
+// Include or Exclude action names. An approval signature locks nothing by
+// default, so later signers may fill their own fields.
+func (b *SignBuilder) LockFields(action string, fields ...string) *SignBuilder {
+	b.fieldLock = &sign.FieldMDP{Action: action, Fields: fields}
 	return b
 }
 

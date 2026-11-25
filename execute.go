@@ -57,6 +57,7 @@ func (d *Document) Write(output io.Writer) (*Result, error) {
 			Updates:            make(map[uint32][]byte),
 			CompressLevel:      d.compressLevel,
 			RevocationFunction: sb.revocationFunc,
+			FieldLock:          sb.fieldLock,
 			Context:            sb.ctx,
 		}
 
@@ -89,6 +90,19 @@ func (d *Document) Write(output io.Writer) (*Result, error) {
 				Cache:         sb.revocationCache,
 				Context:       sb.ctx, // Bound OCSP/CRL requests
 			})
+		}
+
+		// Resolve the target field of this pass against the document as the
+		// previous signature leaves it: a later staged signature signs the
+		// intermediate revision, not the bytes this pass started from.
+		if sb.targetField != "" {
+			id, err := resolveSignatureFieldID(currentRdr, sb.targetField)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve field %q: %w", sb.targetField, err)
+			}
+			signData.TargetFieldID = id
+		} else {
+			signData.TargetFieldID = 0
 		}
 
 		// Apply pending form field updates

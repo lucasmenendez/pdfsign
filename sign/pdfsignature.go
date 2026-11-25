@@ -67,6 +67,14 @@ func (context *SignContext) createSignaturePlaceholder() ([]byte, error) {
 	case CertificationSignature, UsageRightsSignature:
 		signature_buffer.WriteString(" /Reference [\n") // start array of signature reference dictionaries
 		signature_buffer.WriteString(" << /Type /SigRef\n")
+	case ApprovalSignature:
+		// A FieldMDP transform is opt-in (12.8.2.4): locking every field by
+		// default would keep a later signer from filling their own field
+		// without invalidating this signature.
+		if context.SignData.FieldLock != nil {
+			signature_buffer.WriteString(" /Reference [\n") // start array of signature reference dictionaries
+			signature_buffer.WriteString(" << /Type /SigRef\n")
+		}
 	}
 
 	switch context.SignData.Signature.CertType {
@@ -114,6 +122,12 @@ func (context *SignContext) createSignaturePlaceholder() ([]byte, error) {
 
 	// Approval signatures (also known as recipient signatures)
 	case ApprovalSignature:
+		// A FieldMDP transform is opt-in (12.8.2.4); see the /Reference
+		// switch above for why the default writes none.
+		if context.SignData.FieldLock == nil {
+			break
+		}
+
 		// Used to detect modifications to a list of form fields specified in TransformParams; see
 		// 12.8.2.4, "FieldMDP"
 		signature_buffer.WriteString("   /TransformMethod /FieldMDP\n")
@@ -126,12 +140,30 @@ func (context *SignContext) createSignaturePlaceholder() ([]byte, error) {
 		signature_buffer.WriteString("     /Type /TransformParams\n")
 
 		// Action [name]: (Required) A name that, along with the Fields array, describes
-		//   which form fields do not permit changes after the signature is applied.
-		//   Valid values shall be:
-		//     All - All form fields
-		//     Include - Only those form fields specified in Fields.
-		//     Exclude - Only those form fields not specified in Fields.
-		signature_buffer.WriteString("     /Action /All\n")
+		// which form fields do not permit changes after the signature is applied.
+		// Valid values shall be:
+		//   All - All form fields
+		//   Include - Only those form fields specified in Fields.
+		//   Exclude - Only those form fields not specified in Fields.
+		fmt.Fprintf(&signature_buffer, "     /Action /%s\n", context.SignData.FieldLock.Action)
+
+		// Fields [array]: (Required for Include and Exclude) The fully or
+		// partially qualified names of the form fields the Action names.
+		for i, name := range context.SignData.FieldLock.Fields {
+			encoded, err := pdfString(name)
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode locked field name: %w", err)
+			}
+			if i == 0 {
+				signature_buffer.WriteString("     /Fields [")
+			} else {
+				signature_buffer.WriteString(" ")
+			}
+			signature_buffer.WriteString(encoded)
+		}
+		if len(context.SignData.FieldLock.Fields) > 0 {
+			signature_buffer.WriteString("]\n")
+		}
 
 		// V [name]: (Optional; required for PDF 1.5 and later) The transform parameters
 		//   dictionary version. The value for PDF 1.5 and later shall be 1.2.
@@ -144,11 +176,12 @@ func (context *SignContext) createSignaturePlaceholder() ([]byte, error) {
 		signature_buffer.WriteString("   >>\n") // close TransformParams
 		signature_buffer.WriteString(" >>")     // close SigRef
 		signature_buffer.WriteString(" ]")      // end of reference
-	}
-
-	switch context.SignData.Signature.CertType {
 	case ApprovalSignature:
-		signature_buffer.WriteString(" >>\n")
+		if context.SignData.FieldLock != nil {
+			signature_buffer.WriteString("   >>\n") // close TransformParams
+			signature_buffer.WriteString(" >>")     // close SigRef
+			signature_buffer.WriteString(" ]")      // end of reference
+		}
 	}
 
 	// (Optional) A name identifying the algorithm that shall be used when computing the digest if not specified in the

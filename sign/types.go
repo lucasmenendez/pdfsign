@@ -48,6 +48,19 @@ type SignData struct {
 	// The key is the object ID, use it with SignContext.UpdateObject.
 	Updates map[uint32][]byte
 
+	// FieldLock, when set on an approval signature, writes a FieldMDP
+	// transform reference that locks the fields it names. Nil, the default,
+	// writes none: a lock of all fields would keep every later signer from
+	// filling their own field without invalidating this signature.
+	FieldLock *FieldMDP
+
+	// TargetFieldID, when non-zero, signs into the pre-existing empty
+	// signature field with that object number instead of creating a new
+	// widget field: the field keeps its name, flags and seed values, and its
+	// /V is set to the new signature object. The field must exist in the form
+	// tree and carry no /V, and a visible appearance is not supported with it.
+	TargetFieldID uint32
+
 	// PreSignCallback is called before the signature object is written.
 	// It allows adding additional objects (e.g., initials) using the SignContext.
 	PreSignCallback func(context *SignContext) error
@@ -99,6 +112,18 @@ type Appearance struct {
 type VisualSignData struct {
 	pageObjectId uint32
 	objectId     uint32
+}
+
+// FieldMDP selects the form fields an approval signature locks against
+// changes (ISO 32000-1 12.8.2.4, FieldMDP transform).
+type FieldMDP struct {
+	// Action names the fields the lock applies to: All, Include or Exclude.
+	// Include and Exclude need Fields; All ignores it.
+	Action string
+
+	// Fields holds the fully qualified names an Include or Exclude action
+	// names.
+	Fields []string
 }
 
 type InfoData struct {

@@ -87,11 +87,14 @@ func (context *SignContext) createCatalog() ([]byte, error) {
 		}
 	}
 
-	// Add the visual signature field to the AcroForm dictionary
-	if fieldsAdded > 0 {
-		catalog_buffer.WriteString(" ")
+	// Add the visual signature field to the AcroForm dictionary. Signing
+	// into an existing field creates no widget, so none is added.
+	if context.VisualSignData.objectId != 0 {
+		if fieldsAdded > 0 {
+			catalog_buffer.WriteString(" ")
+		}
+		catalog_buffer.WriteString(strconv.Itoa(int(context.VisualSignData.objectId)) + " 0 R")
 	}
-	catalog_buffer.WriteString(strconv.Itoa(int(context.VisualSignData.objectId)) + " 0 R")
 
 	catalog_buffer.WriteString("]\n") // close Fields array
 

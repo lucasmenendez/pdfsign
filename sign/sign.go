@@ -216,6 +216,24 @@ func (context *SignContext) validateSignData() error {
 		return fmt.Errorf("unsupported SubFilter value: %d", context.SignData.SubFilter)
 	}
 
+	if lock := context.SignData.FieldLock; lock != nil {
+		if context.SignData.Signature.CertType != ApprovalSignature {
+			return fmt.Errorf("FieldLock is only valid on an approval signature, not %s", context.SignData.Signature.CertType)
+		}
+		switch lock.Action {
+		case "All":
+			if len(lock.Fields) != 0 {
+				return fmt.Errorf("FieldMDP Action All names no fields, got %d", len(lock.Fields))
+			}
+		case "Include", "Exclude":
+			if len(lock.Fields) == 0 {
+				return fmt.Errorf("FieldMDP Action %s needs the fields it names", lock.Action)
+			}
+		default:
+			return fmt.Errorf("FieldMDP Action %q is not All, Include or Exclude", lock.Action)
+		}
+	}
+
 	if context.SignData.SubFilter == SubFilterETSICAdESDetached {
 		// ETSI EN 319 142-1, 6.2.1: MD5 shall not be used; TS 119 312 excludes SHA-1.
 		switch context.SignData.DigestAlgorithm {
@@ -484,6 +502,13 @@ func (context *SignContext) addSignatureObject() error {
 }
 
 func (context *SignContext) handleVisualSignature() error {
+	// Signing into a pre-existing field replaces widget creation: the target
+	// field's /V starts pointing at the signature object and no new field is
+	// added to the AcroForm.
+	if context.SignData.TargetFieldID != 0 {
+		return context.signIntoExistingField()
+	}
+
 	// Create visual signature (visible or invisible based on CertType)
 	visible := false
 	rectangle := [4]float64{0, 0, 0, 0}
