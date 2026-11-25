@@ -39,7 +39,7 @@ func (context *SignContext) signIntoExistingField() error {
 		return fmt.Errorf("sign: field %d is already signed", context.SignData.TargetFieldID)
 	}
 
-	content, err := buildTargetFieldUpdate(target, context.SignData.objectId)
+	content, err := context.buildTargetFieldUpdate(target, context.SignData.objectId)
 	if err != nil {
 		return err
 	}
@@ -48,10 +48,11 @@ func (context *SignContext) signIntoExistingField() error {
 }
 
 // buildTargetFieldUpdate builds the replacement dictionary of the target
-// field: every entry the field holds except /V — an indirect entry stays a
-// reference, so a parent or resource is neither duplicated nor turned into a
-// copy — with /V set to the signature object.
-func buildTargetFieldUpdate(field pdf.Value, signatureObjectID uint32) ([]byte, error) {
+// field: every entry the field holds except /V — serialized losslessly with
+// the same recursive writer the catalog uses, so a seed value dictionary
+// with binary certificate bytes survives the copy — with /V set to the
+// signature object.
+func (context *SignContext) buildTargetFieldUpdate(field pdf.Value, signatureObjectID uint32) ([]byte, error) {
 	ptr := field.GetPtr()
 	if ptr.GetID() == 0 {
 		return nil, fmt.Errorf("sign: target field is a direct object")
@@ -63,12 +64,11 @@ func buildTargetFieldUpdate(field pdf.Value, signatureObjectID uint32) ([]byte, 
 		if key == "V" {
 			continue // replaced below with the new signature object
 		}
-		entry := field.Key(key)
-		if entryPtr := entry.GetPtr(); entryPtr != ptr && entryPtr.GetID() > 0 {
-			fmt.Fprintf(&buf, "  /%s %d %d R\n", key, entryPtr.GetID(), entryPtr.GetGen())
-			continue
+		fmt.Fprintf(&buf, "  %s ", pdfName(key))
+		if err := context.serializeCatalogEntry(&buf, ptr.GetID(), field.Key(key)); err != nil {
+			return nil, fmt.Errorf("sign: serialize field entry %q: %w", key, err)
 		}
-		fmt.Fprintf(&buf, "  /%s %s\n", key, entry.String())
+		buf.WriteString("\n")
 	}
 	fmt.Fprintf(&buf, "  /V %d 0 R\n", signatureObjectID)
 	buf.WriteString(">>")

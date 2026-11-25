@@ -66,7 +66,7 @@ func buildTestPDF(t *testing.T, count int) []byte {
 		name := fmt.Sprintf("presign_%03d", i+1)
 		objects[6+i] = fmt.Sprintf(
 			"<< /Type /Annot /Subtype /Widget /FT /Sig /T (%s) /Ff 2 /Rect [0 0 0 0] /F 132"+
-				" /SV << /Type /SeedValue /Ff 1 /Reason [(approval)] >> >>", name)
+				" /SV << /Type /SeedValue /Ff 1 /Reason [(approval)] /Cert << /Ff 1 /Subject [<00112233FFEEDDCC>] >> >> >>", name)
 	}
 	maxID := 5 + count
 
@@ -188,6 +188,10 @@ func TestSignIntoExistingField(t *testing.T) {
 	}
 	if field.Key("SV").IsNull() {
 		t.Fatal("presign_001 lost its /SV seed value dictionary")
+	}
+	// The binary certificate whitelist survives the copy byte-exact.
+	if got := field.Key("SV").Key("Cert").Key("Subject").Index(0).RawString(); got != "\x00\x11\x22\x33\xff\xee\xdd\xcc" {
+		t.Fatalf("seed /Subject changed across the update: %q", got)
 	}
 	if sig.Key("Contents").IsNull() {
 		t.Fatal("signature carries no /Contents")
